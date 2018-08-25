@@ -5,7 +5,6 @@ use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::{self, ir, settings};
 use cranelift_module::{
     Backend, DataContext, DataDescription, Init, Linkage, ModuleNamespace, ModuleResult,
-    Writability,
 };
 use cranelift_native;
 use libc;
@@ -60,7 +59,7 @@ impl SimpleJITBuilder {
     /// back to a platform-specific search (this typically involves searching
     /// the current process for public symbols, followed by searching the
     /// platform's C runtime).
-    pub fn symbol<'a, K>(&'a mut self, name: K, ptr: *const u8) -> &'a mut Self
+    pub fn symbol<K>(&mut self, name: K, ptr: *const u8) -> &Self
     where
         K: Into<String>,
     {
@@ -71,7 +70,7 @@ impl SimpleJITBuilder {
     /// Define multiple symbols in the internal symbol table.
     ///
     /// Using this is equivalent to calling `symbol` on each element.
-    pub fn symbols<'a, It, K>(&'a mut self, symbols: It) -> &'a mut Self
+    pub fn symbols<It, K>(&mut self, symbols: It) -> &Self
     where
         It: IntoIterator<Item = (K, *const u8)>,
         K: Into<String>,
@@ -192,11 +191,11 @@ impl<'simple_jit_backend> Backend for SimpleJITBackend {
     fn define_data(
         &mut self,
         _name: &str,
+        writable: bool,
         data: &DataContext,
         _namespace: &ModuleNamespace<Self>,
     ) -> ModuleResult<Self::CompiledData> {
         let &DataDescription {
-            writable,
             ref init,
             ref function_decls,
             ref data_decls,
@@ -205,15 +204,14 @@ impl<'simple_jit_backend> Backend for SimpleJITBackend {
         } = data.description();
 
         let size = init.size();
-        let storage = match writable {
-            Writability::Readonly => self
-                .writable_memory
+        let storage = if writable {
+            self.writable_memory
                 .allocate(size)
-                .expect("TODO: handle OOM etc."),
-            Writability::Writable => self
-                .writable_memory
+                .expect("TODO: handle OOM etc.")
+        } else {
+            self.readonly_memory
                 .allocate(size)
-                .expect("TODO: handle OOM etc."),
+                .expect("TODO: handle OOM etc.")
         };
 
         match *init {
